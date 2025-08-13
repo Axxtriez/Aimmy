@@ -1,7 +1,9 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
@@ -28,6 +30,43 @@ namespace SecondaryWindows
             }
         }
 
+        private static string GetSafeConfigFilePath(string rawName)
+        {
+            string baseDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bin", "configs");
+            Directory.CreateDirectory(baseDirectory);
+
+            string nameOnly = rawName ?? string.Empty;
+            nameOnly = nameOnly.Trim();
+
+            // Replace invalid characters and collapse whitespace
+            var invalid = Path.GetInvalidFileNameChars();
+            nameOnly = new string(nameOnly.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
+            nameOnly = Regex.Replace(nameOnly, "\\s+", " ").Trim();
+
+            if (string.IsNullOrWhiteSpace(nameOnly))
+            {
+                nameOnly = "config";
+            }
+
+            // Ensure .cfg extension
+            if (!nameOnly.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase))
+            {
+                nameOnly += ".cfg";
+            }
+
+            string combined = Path.Combine(baseDirectory, nameOnly);
+
+            // Normalize and ensure it stays within baseDirectory
+            string fullPath = Path.GetFullPath(combined);
+            string fullBase = Path.GetFullPath(baseDirectory) + Path.DirectorySeparatorChar;
+            if (!fullPath.StartsWith(fullBase, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Invalid configuration file name.");
+            }
+
+            return fullPath;
+        }
+
         private void WriteJSON()
         {
             try
@@ -50,7 +89,8 @@ namespace SecondaryWindows
                 extendedSettings["TopMost"] = this.Topmost ? true : false;
 
                 string json = JsonConvert.SerializeObject(extendedSettings, Formatting.Indented);
-                File.WriteAllText($"bin/configs/{ConfigNameTextbox.Text}.cfg", json);
+                string safePath = GetSafeConfigFilePath(ConfigNameTextbox.Text);
+                File.WriteAllText(safePath, json);
             }
             catch (Exception x)
             {
@@ -64,7 +104,18 @@ namespace SecondaryWindows
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            if (File.Exists($"bin/configs/{ConfigNameTextbox.Text}.cfg"))
+            string safePath;
+            try
+            {
+                safePath = GetSafeConfigFilePath(ConfigNameTextbox.Text);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Aimmy - Configuration Saver");
+                return;
+            }
+
+            if (File.Exists(safePath))
             {
                 if (MessageBox.Show("A config already exists with the same name, would you like to overwrite it?",
                     "Aimmy - Configuration Saver", MessageBoxButton.YesNo) == MessageBoxResult.Yes)

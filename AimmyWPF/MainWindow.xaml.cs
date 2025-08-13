@@ -1,4 +1,4 @@
-﻿using AimmyAimbot;
+using AimmyAimbot;
 using AimmyWPF.Class;
 using AimmyWPF.UserController;
 using Class;
@@ -34,7 +34,7 @@ namespace AimmyWPF
 
         private readonly BrushConverter brushcolor = new();
 
-        private int TimeSinceLastClick = 0;
+        // Removed unused TimeSinceLastClick field to avoid confusion with local variable in DoTriggerClick
         private DateTime LastClickTime = DateTime.MinValue;
 
         private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
@@ -111,7 +111,7 @@ namespace AimmyWPF
             if (!RM.IsVCRedistInstalled())
             {
                 MessageBox.Show("Visual C++ Redistributables x64 are not installed on this device, please install them before using Aimmy to avoid issues.", "Load Error");
-                Process.Start("https://aka.ms/vs/17/release/vc_redist.x64.exe");
+                Process.Start(new ProcessStartInfo { FileName = "https://aka.ms/vs/17/release/vc_redist.x64.exe", UseShellExecute = true });
                 Application.Current.Shutdown();
             }
             //if(!RM.IsDotNetInstalled()) not working
@@ -220,7 +220,7 @@ namespace AimmyWPF
         #region Mouse Movement / Clicking Handler
 
         [DllImport("user32.dll")]
-        private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, int dwExtraInfo);
+        private static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, int dwExtraInfo);
 
         private static Random MouseRandom = new();
 
@@ -245,9 +245,9 @@ namespace AimmyWPF
 
             if (TimeSinceLastClick >= Trigger_Delay_Milliseconds || LastClickTime == DateTime.MinValue)
             {
-                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0u, 0);
                 await Task.Delay(20);
-                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0u, 0);
                 LastClickTime = DateTime.Now;
             }
 
@@ -285,7 +285,7 @@ namespace AimmyWPF
             // Calculate new position along the Bezier curve
             Point newPosition = CubicBezier(start, end, control1, control2, 1 - Alpha);
 
-            mouse_event(MOUSEEVENTF_MOVE, (uint)newPosition.X, (uint)newPosition.Y, 0, 0);
+            mouse_event(MOUSEEVENTF_MOVE, newPosition.X, newPosition.Y, 0, 0);
 
             if (toggleState["TriggerBot"])
             {
@@ -404,7 +404,7 @@ namespace AimmyWPF
                 //}
 
                 // We have to have some sort of delay here to not overload the CPU / reduce CPU usage.
-                await Task.Delay(1);
+                await Task.Delay(10);
             }
         }
 

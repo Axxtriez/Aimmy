@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Linq;
 using SecondaryWindows;
 using System;
 using System.Diagnostics;
@@ -89,7 +89,7 @@ namespace AimmyWPF.UserController
                 sw.WriteLine($"( del /F /Q \"%~f0\" >nul 2>&1 & exit ) >nul");
             }
 
-            Process.Start(batchScriptPath);
+            Process.Start(new ProcessStartInfo { FileName = batchScriptPath, UseShellExecute = true });
             Environment.Exit(0);
         }
 

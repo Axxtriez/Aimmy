@@ -1,4 +1,4 @@
-﻿using AimmyAimbot;
+using AimmyAimbot;
 using AimmyWPF.Class;
 using AimmyWPF.UserController;
 using Class;
@@ -939,30 +939,35 @@ namespace AimmyWPF
 
         private void InitializeModel()
         {
-            if (!ModelLoadDebounce)
+            if (ModelLoadDebounce) return;
+
+            if (Bools.ConstantTracking && Bools.AIAimAligner) return;
+
+            ModelLoadDebounce = true;
+            try
             {
-                if (!(Bools.ConstantTracking && Bools.AIAimAligner))
+                string selectedModel = SelectorListBox.SelectedItem?.ToString();
+                if (string.IsNullOrEmpty(selectedModel))
                 {
-                    ModelLoadDebounce = true;
-
-                    string selectedModel = SelectorListBox.SelectedItem?.ToString();
-                    if (selectedModel == null) return;
-
-                    string modelPath = Path.Combine("bin/models", selectedModel);
-
-                    _onnxModel?.Dispose();
-                    _onnxModel = new AIModel(modelPath)
-                    {
-                        ConfidenceThreshold = (float)(aimmySettings["AI_Min_Conf"] / 100.0f),
-                        CollectData = toggleState["CollectData"],
-                        FovSize = (int)aimmySettings["FOV_Size"]
-                    };
-
-                    SelectedModelNotifier.Content = "Loaded Model: " + selectedModel;
-                    lastLoadedModel = selectedModel;
-
-                    ModelLoadDebounce = false;
+                    return;
                 }
+
+                string modelPath = Path.Combine("bin/models", selectedModel);
+
+                _onnxModel?.Dispose();
+                _onnxModel = new AIModel(modelPath)
+                {
+                    ConfidenceThreshold = (float)(aimmySettings["AI_Min_Conf"] / 100.0f),
+                    CollectData = toggleState["CollectData"],
+                    FovSize = (int)aimmySettings["FOV_Size"]
+                };
+
+                SelectedModelNotifier.Content = "Loaded Model: " + selectedModel;
+                lastLoadedModel = selectedModel;
+            }
+            finally
+            {
+                ModelLoadDebounce = false;
             }
         }
 

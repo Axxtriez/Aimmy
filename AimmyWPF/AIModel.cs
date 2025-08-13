@@ -1,4 +1,4 @@
-﻿using AimmyWPF.Class;
+using AimmyWPF.Class;
 using KdTree;
 using KdTree.Math;
 using Microsoft.ML.OnnxRuntime;
@@ -108,7 +108,7 @@ namespace AimmyAimbot
             if (_screenCaptureBitmap == null || _screenCaptureBitmap.Width != detectionBox.Width || _screenCaptureBitmap.Height != detectionBox.Height)
             {
                 _screenCaptureBitmap?.Dispose();
-                _screenCaptureBitmap = new Bitmap(detectionBox.Width, detectionBox.Height);
+                _screenCaptureBitmap = new Bitmap(detectionBox.Width, detectionBox.Height, PixelFormat.Format24bppRgb);
             }
 
             using (var g = Graphics.FromImage(_screenCaptureBitmap))
@@ -166,7 +166,8 @@ namespace AimmyAimbot
                 {
                     lastSavedTime = currentTime;
                     string uuid = Guid.NewGuid().ToString();
-                    await Task.Run(() => frame.Save($"bin/images/{uuid}.jpg"));
+                    using var frameClone = (Bitmap)frame.Clone();
+                    await Task.Run(() => frameClone.Save($"bin/images/{uuid}.jpg"));
                 }
             }
 
@@ -174,64 +175,74 @@ namespace AimmyAimbot
             float[] inputArray = BitmapToFloatArray(frame);
             if (inputArray == null) { return null; }
 
-            Tensor<float> inputTensor = new DenseTensor<float>(inputArray, new int[] { 1, 3, frame.Height, frame.Width });
+            var inputTensor = new DenseTensor<float>(inputArray, new int[] { 1, 3, frame.Height, frame.Width });
             var inputs = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor("images", inputTensor) };
-            var results = _onnxModel.Run(inputs, _outputNames, _modeloptions);
-
-            var outputTensor = results[0].AsTensor<float>();
-
-            // Calculate the FOV boundaries
-            float fovMinX = (IMAGE_SIZE - FovSize) / 2.0f;
-            float fovMaxX = (IMAGE_SIZE + FovSize) / 2.0f;
-            float fovMinY = (IMAGE_SIZE - FovSize) / 2.0f;
-            float fovMaxY = (IMAGE_SIZE + FovSize) / 2.0f;
-
-            var tree = new KdTree<float, Prediction>(2, new FloatMath());
-
-            var filteredIndices = Enumerable.Range(0, NUM_DETECTIONS)
-                                    .AsParallel()
-                                    .Where(i => outputTensor[0, 4, i] >= ConfidenceThreshold)
-                                    .ToList();
-
-            object treeLock = new object();
-
-            foreach (var i in filteredIndices)
+            IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = null;
+            try
             {
-                float objectness = outputTensor[0, 4, i];
-                AIConfidence = objectness;
+                results = _onnxModel.Run(inputs, _outputNames, _modeloptions);
+                var outputTensor = results[0].AsTensor<float>();
 
-                float x_center = outputTensor[0, 0, i];
-                float y_center = outputTensor[0, 1, i];
-                float width = outputTensor[0, 2, i];
-                float height = outputTensor[0, 3, i];
+                // Calculate the FOV boundaries
+                float fovMinX = (IMAGE_SIZE - FovSize) / 2.0f;
+                float fovMaxX = (IMAGE_SIZE + FovSize) / 2.0f;
+                float fovMinY = (IMAGE_SIZE - FovSize) / 2.0f;
+                float fovMaxY = (IMAGE_SIZE + FovSize) / 2.0f;
 
-                float x_min = x_center - width / 2;
-                float y_min = y_center - height / 2;
-                float x_max = x_center + width / 2;
-                float y_max = y_center + height / 2;
+                var tree = new KdTree<float, Prediction>(2, new FloatMath());
 
-                if (x_min >= fovMinX && x_max <= fovMaxX && y_min >= fovMinY && y_max <= fovMaxY)
+                var filteredIndices = Enumerable.Range(0, NUM_DETECTIONS)
+                                        .AsParallel()
+                                        .Where(i => outputTensor[0, 4, i] >= ConfidenceThreshold)
+                                        .ToList();
+
+                object treeLock = new object();
+
+                foreach (var i in filteredIndices)
                 {
-                    var prediction = new Prediction
-                    {
-                        Rectangle = new RectangleF(x_min, y_min, x_max - x_min, y_max - y_min),
-                        Confidence = objectness
-                    };
+                    float objectness = outputTensor[0, 4, i];
+                    AIConfidence = objectness;
 
-                    var centerX = (x_min + x_max) / 2.0f;
-                    var centerY = (y_min + y_max) / 2.0f;
+                    float x_center = outputTensor[0, 0, i];
+                    float y_center = outputTensor[0, 1, i];
+                    float width = outputTensor[0, 2, i];
+                    float height = outputTensor[0, 3, i];
 
-                    lock (treeLock)
+                    float x_min = x_center - width / 2;
+                    float y_min = y_center - height / 2;
+                    float x_max = x_center + width / 2;
+                    float y_max = y_center + height / 2;
+
+                    if (x_min >= fovMinX && x_max <= fovMaxX && y_min >= fovMinY && y_max <= fovMaxY)
                     {
-                        tree.Add(new[] { centerX, centerY }, prediction);
+                        var prediction = new Prediction
+                        {
+                            Rectangle = new RectangleF(x_min, y_min, x_max - x_min, y_max - y_min),
+                            Confidence = objectness
+                        };
+
+                        var centerX = (x_min + x_max) / 2.0f;
+                        var centerY = (y_min + y_max) / 2.0f;
+
+                        lock (treeLock)
+                        {
+                            tree.Add(new[] { centerX, centerY }, prediction);
+                        }
                     }
                 }
+
+                // Querying the KDTree for the closest prediction to the center.
+                var nodes = tree.GetNearestNeighbours(new[] { IMAGE_SIZE / 2.0f, IMAGE_SIZE / 2.0f }, 1);
+                return nodes.Length > 0 ? nodes[0].Value : null;
             }
-
-            // Querying the KDTree for the closest prediction to the center.
-            var nodes = tree.GetNearestNeighbours(new[] { IMAGE_SIZE / 2.0f, IMAGE_SIZE / 2.0f }, 1);
-
-            return nodes.Length > 0 ? nodes[0].Value : (Prediction?)null;
+            finally
+            {
+                results?.Dispose();
+                foreach (var nv in inputs)
+                {
+                    nv.Dispose();
+                }
+            }
         }
 
         public void Dispose()

@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -28,6 +28,20 @@ namespace SecondaryWindows
             }
         }
 
+        private static string SanitizeFileName(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return "config";
+            foreach (char c in Path.GetInvalidFileNameChars())
+            {
+                input = input.Replace(c, '_');
+            }
+            // prevent sneaky path parts
+            input = input.Replace("..", "_");
+            input = input.Replace(Path.DirectorySeparatorChar, '_');
+            input = input.Replace(Path.AltDirectorySeparatorChar, '_');
+            return input.Trim();
+        }
+
         private void WriteJSON()
         {
             try
@@ -50,7 +64,9 @@ namespace SecondaryWindows
                 extendedSettings["TopMost"] = this.Topmost ? true : false;
 
                 string json = JsonConvert.SerializeObject(extendedSettings, Formatting.Indented);
-                File.WriteAllText($"bin/configs/{ConfigNameTextbox.Text}.cfg", json);
+                string safeName = SanitizeFileName(ConfigNameTextbox.Text);
+                string targetPath = Path.Combine("bin", "configs", safeName + ".cfg");
+                File.WriteAllText(targetPath, json);
             }
             catch (Exception x)
             {
@@ -64,7 +80,9 @@ namespace SecondaryWindows
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            if (File.Exists($"bin/configs/{ConfigNameTextbox.Text}.cfg"))
+            string safeName = SanitizeFileName(ConfigNameTextbox.Text);
+            string targetPath = Path.Combine("bin", "configs", safeName + ".cfg");
+            if (File.Exists(targetPath))
             {
                 if (MessageBox.Show("A config already exists with the same name, would you like to overwrite it?",
                     "Aimmy - Configuration Saver", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
